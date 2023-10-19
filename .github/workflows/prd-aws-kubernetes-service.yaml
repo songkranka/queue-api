@@ -1,0 +1,165 @@
+name: "PRD - EKS queue-punthai-backend"
+
+# on:
+#  push:
+#    branches: [ uat ]
+#    paths-ignore:
+#      - '**.md'
+#      - '.github/workflows/**'
+#      - 'k8s_deployment/**'
+#      - 'dockerfile'
+#  pull_request:
+#    branches: [ uat ]
+#    paths-ignore:
+#      - '**.md'
+#      - '.github/workflows/**'
+#      - 'k8s_deployment/**'
+#      - 'dockerfile'
+#  workflow_dispatch:
+
+# on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Tags Image'
+
+env:
+  APP_NAME: ${{ vars.APP_NAME }}
+  APP_VERSION: ${{ vars.APP_VERSION }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCESS_KEY: ${{ secrets.PUNTHAI_DEV_SIT_AWS_ACCESS_KEY }}
+  AWS_SECRET_KEY: ${{ secrets.PUNTHAI_DEV_SIT_AWS_SECRET_KEY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  EKS_CUSTER_NAME: "uat-qas-punthai"
+  IMAGE_TAG: ${{ github.run_number }}
+  ENV_TAG: ${{ github.event.inputs.tags }}
+
+jobs:
+
+  job_approval:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Manual Workflow Approval
+      uses: trstringer/manual-approval@v1.9.0
+      with:
+        secret: ${{ github.TOKEN }}
+        approvers: thavornch, lasttom
+        minimum-approvals: 1
+        issue-title: "Start Deploying"
+        issue-body: "Please approve or deny the Start Deploying "
+        exclude-workflow-initiator-as-approver: false
+        additional-approved-words: ''
+        additional-denied-words: ''
+
+  job_build:
+    name: "CI Dotnet restore package"
+    runs-on: ubuntu-latest
+    needs: [job_approval]  
+    steps:
+    - name: "Checkout code"
+      uses: actions/checkout@v3
+
+    - name: Setup .NET 7
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 7.0.x
+
+    # - name: Restore dependencies
+    #   run: dotnet restore
+
+    # - name: Build Dot net
+    #   run: dotnet build --no-restore
+
+    # - name: Unit Test
+    #   run: dotnet test --no-build --verbosity normal
+                
+  job_ecr:
+    needs: [job_build]
+    if: ${{ needs.job_build.result == 'success' }}
+    name: "Build image aws ECR"
+    runs-on: ubuntu-latest
+    steps:
+    - name: "Checkout code"
+      uses: actions/checkout@v3
+
+    - name: "Configure AWS credentials"
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.ECR_ACCESS_KEY }}
+        aws-secret-access-key: ${{ secrets.ECR_SECRET_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: "Login to Amazon ECR"
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Install and configure AWS CLI
+      run: |
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install --update
+      if: success()
+
+    - name: Get latest
+      id: get-latest-images
+      run: |
+        aws ecr describe-repositories
+        MANIFEST=$(aws ecr batch-get-image --repository-name queue-punthai-backend-api-service --image-ids imageTag=latest --output text --query images[].imageManifest
+
+    - name: Get latest
+      id: ecr-retag-images
+      run: |
+        echo ${{ steps.get-latest-images.outputs }}
+        echo ${{ $MANIFEST }}
+        echo ${{ env.ENV_TAG }}
+        aws ecr put-image --repository-name queue-punthai-backend-api-service --image-tag prd --image-manifest "$MANIFEST"
+
+    - name: CLI Re Tag and Push
+      run: |
+        echo ${{ steps.ecr-retag-images.outputs }}
+        echo ${{ steps.login-ecr.outputs.registry }}
+      if: success()
+
+  jobkubectl:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write  
+    name: "AWS credentials Kubectl"
+    runs-on: ubuntu-latest
+    needs: [jobecr]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install and configure AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --update
+        if: success()
+
+      - name: EKS Kube config
+        run: |
+          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CUSTER_NAME }}
+
+      - name: Tag Image deployment
+        run: | 
+          sed -i 's|IMAGE_NAME|${{ env.ECR_REPOSITORY }}:${{ env.APP_VERSION }}${{ env.IMAGE_TAG }}|g' .github/k8s_deploy/deployment.yaml
+          cat .github/k8s_deploy/deployment.yaml
+
+      - name: AKS kubectl apply
+        run: |
+          kubectl apply -f .github/k8s_deploy/secret.yaml
+          kubectl apply -f .github/k8s_deploy/deployment.yaml
+          kubectl apply -f .github/k8s_deploy/service.yaml
+          kubectl apply -f .github/k8s_deploy/ingress.yaml
+          kubectl apply -f .github/k8s_deploy/hpa.yaml

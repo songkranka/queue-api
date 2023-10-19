@@ -1,0 +1,17 @@
+﻿kind: Service
+apiVersion: v1
+metadata:
+ name: queue-punthai-backend-api-service
+ namespace: queue-punthai-uat
+spec:
+ type: ClusterIP
+ #LoadBalancer
+ #NodePort
+ #ClusterIP
+ ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+ selector:
+   app: queue-punthai-backend-api
+   

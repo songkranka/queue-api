@@ -1,0 +1,40 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: queue-punthai-backend-api
+  namespace: queue-punthai
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: queue-punthai-backend-api
+  template:
+    metadata:
+      labels:
+        app: queue-punthai-backend-api
+    spec:
+      containers:
+        - name: queue-punthai-backend-api
+          image: queue-punthai-api:v0.1devops
+          volumeMounts:
+            - name: appsettings-k8s
+              mountPath: /app/appsetting.json
+          imagePullPolicy: IfNotPresent
+          env:
+          - name: TZ
+            value: "Asia/Bangkok"                     
+      restartPolicy: Always
+      imagePullSecrets:      
+        - name: queue-punthai-registry-secret
+      volumes:
+        - name: appsettings-k8s
+          projected:
+            sources:
+            - configMap: 
+                name: backend-queue-configmap

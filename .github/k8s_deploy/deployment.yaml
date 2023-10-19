@@ -1,0 +1,60 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-punthai-backend-api
+  namespace: queue-punthai-dev
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: queue-punthai-backend-api
+  template:
+    metadata:
+      labels:
+        app: queue-punthai-backend-api
+    spec:
+      securityContext: # user and group id to execute docker image if specific user to execute
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+      - name: queue-punthai-backend-api
+        image: IMAGE_NAME
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: "500Mi"
+            cpu: "256m"
+        env:
+          - name: ASPNETCORE_ENVIRONMENT
+            value: Production
+          - name: TZ
+            value: Asia/Bangkok
+          # - name: ASPNETCORE_Kestrel__Certificates__Default__Password
+          #   value: "" # cert password if required
+          # - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+          #   value: /secrets/tls-cert/reiven-tls-cert.pfx  # cert path to map
+          # - name: ASPNETCORE_HTTPS_PORT
+          #   value: "443" # default port to expose if not specific in docker file
+        volumeMounts:
+          - name: appsetting
+            mountPath: /app/appsettings.Production.json
+            subPath: appsettings.Production.json
+            readOnly: true
+          # - name: cer-punthai-dev
+          #   mountPath: /secrets/tls-cert
+          #   readOnly: true
+      restartPolicy: Always
+      imagePullSecrets:
+        - name: queue-punthai-secret
+      volumes:
+        - name: appsetting
+          secret:
+            secretName: queue-punthai-secret
+        # - name: cer-punthai-dev
+        #   secret:
+        #     secretName: ca.cer

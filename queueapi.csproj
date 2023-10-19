@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>5d1a06fd-96b4-4a13-aa9a-d84c0f449180</UserSecretsId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <DockerfileContext>.</DockerfileContext>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove=".github\deployment\**" />
+    <Content Remove=".github\deployment\**" />
+    <EmbeddedResource Remove=".github\deployment\**" />
+    <None Remove=".github\deployment\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.9.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.17.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="7.0.3" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.18.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".github\aws\kubecost-alb-class.yaml" />
+    <None Include=".github\azure\2_ingress-controller.yaml" />
+    <None Include=".github\azure\deployment.yaml" />
+    <None Include=".github\azure\ingress-controller.yaml" />
+    <None Include=".github\azure\ingress.yaml" />
+    <None Include=".github\azure\namespace.yaml" />
+    <None Include=".github\azure\secret.yaml" />
+    <None Include=".github\azure\service.yaml" />
+    <None Include=".github\k8s_deploy\alb-ingress-controller.yaml" />
+    <None Include=".github\k8s_deploy\alb-serviceaccount.yaml" />
+    <None Include=".github\k8s_deploy\deployment.yaml" />
+    <None Include=".github\k8s_deploy\hpa.yaml" />
+    <None Include=".github\k8s_deploy\ingress-controller.yaml" />
+    <None Include=".github\k8s_deploy\ingress.yaml" />
+    <None Include=".github\k8s_deploy\namespace.yaml" />
+    <None Include=".github\k8s_deploy\secret.yaml" />
+    <None Include=".github\k8s_deploy\service.yaml" />
+    <None Include=".github\k8s_deploy\serviceaccount.yaml" />
+    <None Include=".github\k8s_uat\deployment.yaml" />
+    <None Include=".github\k8s_uat\hpa.yaml" />
+    <None Include=".github\k8s_uat\ingress.yaml" />
+    <None Include=".github\k8s_uat\namespace.yaml" />
+    <None Include=".github\k8s_uat\secret.yaml" />
+    <None Include=".github\k8s_uat\service.yaml" />
+    <None Include=".github\workflows\aws-kubernetes-service.yaml" />
+    <None Include=".github\workflows\azure-kubernetes-service.yaml" />
+    <None Include=".github\workflows\azure-kubernetes-serviceBK.yaml" />
+    <None Include=".github\workflows\dev-aws-kubernetes-service.yaml" />
+    <None Include=".github\workflows\prd-aws-kubernetes-service.yaml" />
+    <None Include=".github\workflows\uat-aws-kubernetes-service.yaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include=".github\secret\" />
+    <Folder Include="localStorage\" />
+    <Folder Include="query\" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+﻿apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx-internal
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  name: ingress-queue-punthai-backend
+  namespace: queue-punthai-dev
+spec:
+  ingressClassName: nginx-internal
+  rules:
+    - host: dev-queue-punthai.pt.co.th
+      http:
+        paths:
+        - pathType: Prefix
+          path: /queue(/|$)(.*)
+          backend:
+            service:
+              name: queue-punthai-backend-api-service
+              port:
+                number: 80

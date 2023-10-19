@@ -1,0 +1,163 @@
+# This workflow will build and push an application to a Azure Kubernetes Service (AKS) cluster when you push your code
+#
+# This workflow assumes you have already created the target AKS cluster and have created an Azure Container Registry (ACR)
+# The ACR should be attached to the AKS cluster
+# For instructions see:
+#   - https://docs.microsoft.com/en-us/azure/aks/kubernetes-walkthrough-portal
+#   - https://docs.microsoft.com/en-us/azure/container-registry/container-registry-get-started-portal
+#   - https://learn.microsoft.com/en-us/azure/aks/cluster-container-registry-integration?tabs=azure-cli#configure-acr-integration-for-existing-aks-clusters
+#   - https://github.com/Azure/aks-create-action
+#
+# To configure this workflow:
+#
+# 1. Set the following secrets in your repository (instructions for getting these can be found at https://docs.microsoft.com/en-us/azure/developer/github/connect-from-azure?tabs=azure-cli%2Clinux):
+#    - AZURE_CLIENT_ID
+#    - AZURE_TENANT_ID
+#    - AZURE_SUBSCRIPTION_ID
+#
+# 2. Set the following environment variables (or replace the values below):
+#    - AZURE_CONTAINER_REGISTRY (name of your container registry / ACR)
+#    - RESOURCE_GROUP (where your cluster is deployed)
+#    - CLUSTER_NAME (name of your AKS cluster)
+#    - CONTAINER_NAME (name of the container image you would like to push up to your ACR)
+#    - IMAGE_PULL_SECRET_NAME (name of the ImagePullSecret that will be created to pull your ACR image)
+#    - DEPLOYMENT_MANIFEST_PATH (path to the manifest yaml for your deployment)
+#
+# For more information on GitHub Actions for Azure, refer to https://github.com/Azure/Actions
+# For more samples to get started with GitHub Action workflows to deploy to Azure, refer to https://github.com/Azure/actions-workflow-samples
+# For more options with the actions used below please refer to https://github.com/Azure/login
+
+name: Azure AKS Backend Queue Punthai
+
+#on:
+#  push:
+#    branches: ["main"]
+#  workflow_dispatch:
+
+on: 
+ workflow_dispatch:
+  inputs:
+      tags:
+        description: 'Tags Image Release'
+
+env:
+  APP_NAME: ${{ vars.APP_NAME }}
+  APP_VERSION: ${{ vars.APP_VERSION }}
+  REGISTRY: ${{ secrets.REGISTRY }}
+  REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+  REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
+  RUNNUMBER: ${{ github.run_number }}
+
+jobs:
+  buildImage:
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      #- name: Login to GitHub Container Registry
+      #  uses: docker/login-action@v2
+      #  with:
+      #    registry: ${{ env.REGISTRY }}
+      #    username: ${{ env.REGISTRY_USER }}
+      #    password: ${{ env.REGISTRY_PASS }}
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: docker login 
+        run: docker login ${{ env.REGISTRY }} --username ${{ env.REGISTRY_USER }} --password ${{ env.REGISTRY_PASS }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.REGISTRY }}/${{ env.APP_NAME }}:${{ env.APP_VERSION }}${{ env.RUNNUMBER}} -f Dockerfile .
+
+      - name: Push Docker image
+        run: docker push ${{ env.REGISTRY }}/${{ env.APP_NAME }}:${{ env.APP_VERSION }}${{ env.RUNNUMBER}}
+          
+      ## Logs in with your Azure credentials
+      #- name: Azure login
+      #  uses: azure/login@v1.4.6
+      #  with:
+      #    client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #    tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #    subscription-id: ${{ c4c548f8-cbbc-45e1-972a-e3d099cc7243 }}
+
+      ## Builds and pushes an image up to your Azure Container Registry
+      #- name: Build and push image to ACR
+      #  run: |
+      #    az acr build --image ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_NAME }}:${{ github.sha }} --registry ${{ env.AZURE_CONTAINER_REGISTRY }} -g ${{ env.RESOURCE_GROUP }} .
+
+  #deploy:
+  #  permissions:
+  #    actions: read
+  #    contents: read
+  #    id-token: write
+  #  runs-on: ubuntu-latest
+  #  needs: [buildImage]
+  #  steps:
+  #    # Checks out the repository this file is in
+  #    - uses: actions/checkout@v3
+
+  #    # Logs in with your Azure credentials
+  #    - name: Azure login
+  #      uses: azure/login@v1.4.6
+  #      with:
+  #        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+  #        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+  #        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+  #    # Use kubelogin to configure your kubeconfig for Azure auth
+  #    - name: Set up kubelogin for non-interactive login
+  #      uses: azure/use-kubelogin@v1
+  #      with:
+  #        kubelogin-version: 'v0.0.25'
+
+  #    # Retrieves your Azure Kubernetes Service cluster's kubeconfig file
+  #    - name: Get K8s context
+  #      uses: azure/aks-set-context@v3
+  #      with:
+  #        resource-group: ${{ env.RESOURCE_GROUP }}
+  #        cluster-name: ${{ env.CLUSTER_NAME }}
+  #        admin: 'false'
+  #        use-kubelogin: 'true'
+
+  #    # Deploys application based on given manifest file
+  #    - name: Deploys application
+  #      uses: Azure/k8s-deploy@v4
+  #      with:
+  #        action: deploy
+  #        manifests: ${{ env.DEPLOYMENT_MANIFEST_PATH }}
+  #        images: |
+  #          ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+  deploy-dev:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    needs: [buildImage]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure kubectl name space
+        run: |
+          echo "${{ secrets.KUBE_CONFIGS_SECRET }}" > kubeconfig.yaml
+          kubectl --kubeconfig=kubeconfig.yaml apply -f .github/k8s_deploy/namespace.yaml
+
+      - name: Replace image to dev yaml
+        run: | 
+          sed -i 's|IMAGE_NAME|${{ env.REGISTRY }}/${{ env.APP_NAME }}:${{ env.APP_VERSION }}${{ env.RUNNUMBER}}|g' .github/k8s_deploy/deployment.yaml
+          cat .github/k8s_deploy/deployment.yaml
+
+      - name: Deploy to AKS kubectl
+        run: |
+          kubectl apply -f .github/k8s_deploy/deployment.yaml
+          kubectl apply -f .github/k8s_deploy/service.yaml
+          kubectl apply -f .github/k8s_deploy/hpa.yaml
+
+          kubectl apply -f .github/k8s_deploy/ingress-controller.yaml
+          kubectl apply -f .github/k8s_deploy/ingress.yaml

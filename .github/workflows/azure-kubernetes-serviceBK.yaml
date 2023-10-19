@@ -1,0 +1,159 @@
+name: Backup Azure k8s Queue Punthai F
+
+on: 
+ workflow_dispatch:
+  inputs:
+      tags:
+        description: 'Tags Image Release'
+# on:
+#   push:
+#     branches: ["master"]
+#   workflow_dispatch:
+
+env:
+  APP_NAME: ${{ vars.APP_NAME }}
+  APP_VERSION: ${{ vars.APP_VERSION }}
+  REGISTRY: ${{ secrets.REGISTRY }}
+  REGISTRY_USER: ${{ secrets.REGISTRY_USERNAME }}
+  REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
+  RUNNUMBER: ${{ github.run_number }}
+
+jobs:
+
+  start_approval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manual Workflow Approval
+        uses: trstringer/manual-approval@v1.9.0
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: thavornch
+          minimum-approvals: 1
+          issue-title: "Start Deploying"
+          issue-body: "Please approve or deny the Start Deploying "
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: ''
+          additional-denied-words: ''
+
+  buildImage:
+    runs-on: ubuntu-latest
+    needs: [start_approval]
+    if: ${{ always() && github.event.inputs.tags == '' }}
+    steps:
+      # - name: Checkout code
+      #   uses: actions/checkout@v2
+      - name: Checkout code
+        run: |
+          git config --global user.email "thavorn.ch@pt.co.th"
+          git config --global user.name "thavornch"
+          git clone https://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@github.com/App-Queue/queue-punthai-web.git
+          cd queue-punthai-api
+          git checkout main
+          echo "Log level: ${{ github.event.inputs.logLevel }}"
+          echo "Tags: ${{ github.event.inputs.tags }}"  
+
+      - name: docker login 
+        run: docker login ${{ env.REGISTRY }} --username  ${{ env.REGISTRY_USER }} --password ${{ env.REGISTRY_PASS }}
+
+      - name: Build Docker image
+        run: |
+          cd queueapi
+          docker build -t ${{ env.REGISTRY }}/${{ env.APP_NAME }}:${{ env.APP_VERSION }}${{ env.RUNNUMBER}} -f Dockerfile .
+          #tags: devuatqueuepunthai.azurecr.io/queue-punthai-api:1.1.${{ github.run_number }}
+      - name: Push Docker image
+        run: docker push ${{ env.REGISTRY }}/${{ env.APP_NAME }}:${{ env.APP_VERSION }}${{ env.RUNNUMBER}}
+
+  approval_PRD:
+    runs-on: ubuntu-latest
+    needs: [buildImage]
+    steps:
+      - name: Manual Workflow Approval
+        uses: trstringer/manual-approval@v1.9.0
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: thavornch
+          minimum-approvals: 1
+          issue-title: "Deploying to PROD"
+          issue-body: "Please approve or deny the deployment to PROD"
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: ''
+          additional-denied-words: ''
+
+  deploy_PRD:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    needs: [approval_PRD]
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASS }}
+
+      - name: Docker image retag
+        uses: tinact/docker.image-retag@1.0.3
+        with:
+          image_name: ${{ env.APP_NAME }}
+          image_old_tag: ${{ env.IMG_VERSIONUAT }}${{ env.RUNNUMBER}}
+          image_new_tag: ${{ env.IMG_VERSIONPRD }}${{ env.RUNNUMBER}}
+          registry: ${{ env.REGISTRY_DOCKER }}
+          registry_username: ${{ env.UDOCKER }}
+          registry_password: ${{ env.PDOCKER }}
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIGS_SECRET }}" > kubeconfig.yaml
+          kubectl --kubeconfig=kubeconfig.yaml apply -f Deployment.yaml
+
+      - name: Replace image to PROD yaml
+        run: | 
+          sed -i 's|IMAGE_NAME|${{ env.REGISTRY_DOCKER }}/${{ env.APP_NAME }}:${{ env.IMG_VERSIONPRD }}${{ env.RUNNUMBER}}|g' Deployment.yaml
+          cat Deployment.yaml
+
+      # - name: Deploy to AKS
+      #   run: |
+      #     kubectl --kubeconfig=kubeconfig.yaml apply -f Deployment.yaml
+      #     kubectl --kubeconfig=kubeconfig.yaml apply -f Service.yaml
+      #     kubectl --kubeconfig=kubeconfig.yaml apply -f HorizontalPodAutoscaler.yaml
+
+  Release:
+    runs-on: ubuntu-latest
+    needs: [start_approval]
+    if: ${{ always() && github.event.inputs.tags != '' }}
+    steps:
+      - name: Checkout code
+        run: |
+          git config --global user.email "thavorn.ch@pt.co.th"
+          git config --global user.name "thavornch"
+          git clone https://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@github.com/App-MaxStation/pt-maxstaion-test.git
+          git checkout main
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig.yaml
+          kubectl --kubeconfig=kubeconfig.yaml apply -f Deployment.yaml
+
+      # - name: Replace image to DEV yaml
+      #   run: | 
+      #     sed -i 's|IMAGE_NAME|${{ env.REGISTRY_DOCKER }}/${{ env.APP_NAME }}:${{ env.IMG_VERSION }}${{ env.RUNNUMBER}}|g' Deployment.yaml
+      #     cat Deployment.yaml
+
+      - name: Deploy to AKS
+        run: |
+          cd pt-maxstaion-test
+          sed -i 's|IMAGE_NAME|${{ env.REGISTRY_DOCKER }}/${{ env.APP_NAME }}:${{ env.IMG_VERSIONDEV }}${{ github.event.inputs.tags}}|g' Deployment.yaml
+          cat Deployment.yaml
+          kubectl --kubeconfig=kubeconfig.yaml delete -f Deployment.yaml
+          kubectl --kubeconfig=kubeconfig.yaml delete -f Service.yaml
+          kubectl --kubeconfig=kubeconfig.yaml delete -f HorizontalPodAutoscaler.yaml
+
+          kubectl --kubeconfig=kubeconfig.yaml apply -f Deployment.yaml
+          kubectl --kubeconfig=kubeconfig.yaml apply -f Service.yaml
+          kubectl --kubeconfig=kubeconfig.yaml apply -f HorizontalPodAutoscaler.yaml
